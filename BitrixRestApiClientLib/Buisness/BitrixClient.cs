@@ -52,7 +52,7 @@ namespace BitrixRestApiClientLib.Buisness
                 return null;
             }
         }
-        public bool SendMessageToDialog(string dialogId, string text, bool IsSystemMessage = true)
+        public bool SendMessageToDialog(string dialogId, string text, out int zeroOrMsgID, bool IsSystemMessage = true)
         {
             string GetSystemAttribute()
             {
@@ -62,29 +62,29 @@ namespace BitrixRestApiClientLib.Buisness
                 }
                 else { return "N"; }
             }
-
             //Получить id чата можно отправив в чат сообщение /getChatId
             try
             {
                 var values = new Dictionary<string, string>
-            {
-                { "DIALOG_ID", $"{dialogId}" },
-                { "MESSAGE", $"{text}" },
-                { "SYSTEM", GetSystemAttribute() },
-                { "ATTACH", "" },
-                { "URL_PREVIEW", "Y" },
-                { "KEYBOARD", "" },
-                { "MENU", "" },
-            };
+                {
+                    { "DIALOG_ID", $"{dialogId}" },
+                    { "MESSAGE", $"{text}" },
+                    { "SYSTEM", GetSystemAttribute() },
+                    { "ATTACH", "" },
+                    { "URL_PREVIEW", "Y" },
+                    { "KEYBOARD", "" },
+                    { "MENU", "" },
+                };
                 var content = new FormUrlEncodedContent(values);
                 var response = client.PostAsync($"{startUrl}im.message.add.json", content);
+                zeroOrMsgID = response.Result.Content.ReadFromJsonAsync<MsgResult>().Result.result;
                 return response.IsCompletedSuccessfully;
             }
             catch
             {
+                zeroOrMsgID = 0;
                 return false;
             }
-
         }
         public List<Message> GetMessagesInChat(string chatId, int limit)
         {
