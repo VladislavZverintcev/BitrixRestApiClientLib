@@ -16,14 +16,6 @@ namespace BitrixRestApiClientLib.Buisness
         HttpClient client = new HttpClient();
         #endregion Fields
 
-        #region Properties
-
-        #endregion Properties
-
-        #region Events
-
-        #endregion Events
-
         #region Constructors
         public BitrixClient(string webhookUrl)
         {
@@ -34,10 +26,6 @@ namespace BitrixRestApiClientLib.Buisness
         #endregion Constructors
 
         #region Methods
-
-        #region Privates
-
-        #endregion Privates	
 
         #region Public
         public List<UserShort> GetUsers()
@@ -86,7 +74,7 @@ namespace BitrixRestApiClientLib.Buisness
                 return false;
             }
         }
-        public List<Message> GetMessagesInChat(string chatId, int limit)
+        public List<Message> GetMessagesFromChat(string chatId, int limit)
         {
             try
             {
@@ -110,6 +98,28 @@ namespace BitrixRestApiClientLib.Buisness
             {
 
                 return new List<Message>();
+            }
+        }
+        public bool UpdateMessage(int messageId, string text)
+        {
+            try
+            {
+                var values = new Dictionary<string, string>
+                {
+                    { "MESSAGE_ID", $"{messageId}" },
+                    { "MESSAGE", $"{text}" },
+                    { "ATTACH", "" },
+                    { "URL_PREVIEW", "Y" },
+                    { "KEYBOARD", "" },
+                    { "MENU", "" },
+                };
+                var content = new FormUrlEncodedContent(values);
+                var response = client.PostAsync($"{startUrl}im.message.update.json", content);
+                return response.IsCompletedSuccessfully;
+            }
+            catch
+            {
+                return false;
             }
         }
 
