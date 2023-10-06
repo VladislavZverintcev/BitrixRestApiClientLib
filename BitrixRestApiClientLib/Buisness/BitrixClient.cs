@@ -9,6 +9,9 @@ using static System.Net.Mime.MediaTypeNames;
 
 namespace BitrixRestApiClientLib.Buisness
 {
+    /// <summary>
+    /// Web клиент с REST-API интерфейсом для взаимодействия с Bitrix24.
+    /// </summary>
     public class BitrixClient
     {
 
@@ -19,7 +22,7 @@ namespace BitrixRestApiClientLib.Buisness
 
         #region Constructors
         /// <summary>
-        /// Web клиент с REST-API интерфейсом для взаимодействия с Bitrix24.
+        /// Конструктор клиента с указанием url адреса входяхего ВебХука.
         /// </summary>
         /// <param name="webhookUrl">Url адрес входящего ВебХука.</param>
         public BitrixClient(string webhookUrl)
