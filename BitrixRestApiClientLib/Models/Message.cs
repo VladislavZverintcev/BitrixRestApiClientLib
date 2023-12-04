@@ -1,23 +1,38 @@
-﻿using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace BitrixRestApiClientLib.Models
+﻿namespace BitrixRestApiClientLib.Models
 {
-    public class Message
+    public class Message : BaseMessage
     {
-        [JsonProperty(PropertyName = "ID")]
-        public int ID { get; set; }
-        [JsonProperty(PropertyName = "CHAT_ID")]
-        public string ChatID { get; set; }
-        [JsonProperty(PropertyName = "AUTHOR_ID")]
-        public int AuthorID { get; set; }
-        [JsonProperty(PropertyName = "DATE")]
-        public string Date { get; set; }
-        [JsonProperty(PropertyName = "TEXT")]
-        public string Text { get; set; }
+        #region Properties
+
+        #region Public
+        public new string ChatId { get; set; }
+        #endregion Public
+
+        #endregion Properties
+
+        #region Constructors
+
+        #region Public
+        public Message() : base()
+        {
+            ChatId = string.Empty;
+        }
+
+        public Message(BaseMessage baseMessage, string chatId)
+        {
+            if (baseMessage == null)
+            {
+                throw new ArgumentNullException(nameof(baseMessage));
+            }
+
+            Id = baseMessage.Id;
+            ChatId = chatId ?? string.Empty;
+            AuthorId = baseMessage.AuthorId;
+            Date = baseMessage.Date;
+            Text = baseMessage.Text;
+        }
+        #endregion Public
+
+        #endregion Constructors
     }
 }

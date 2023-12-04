@@ -1,151 +1,300 @@
-﻿using BitrixRestApiClientLib.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http.Json;
-using System.Text;
-using System.Threading.Tasks;
-using static System.Net.Mime.MediaTypeNames;
+﻿using System.Net.Http.Headers;
+using BitrixRestApiClientLib.Models;
+using Newtonsoft.Json;
 
 namespace BitrixRestApiClientLib.Buisness
 {
     /// <summary>
-    /// Web клиент с REST-API интерфейсом для взаимодействия с Bitrix24.
+    /// Предоставляет класс для взаимодействия с Bitrix24 при помощи REST API
     /// </summary>
-    public class BitrixClient
+    public class BitrixClient : IDisposable
     {
-
         #region Fields
-        string startUrl = "";
-        HttpClient client = new HttpClient();
+
+        #region Private
+        private bool disposed = false;
+        private readonly string webHookUrl = string.Empty;
+        private readonly HttpClient client = new();
+        #endregion Private
+
         #endregion Fields
 
         #region Constructors
+
+        #region Public
         /// <summary>
-        /// Конструктор клиента с указанием url адреса входяхего ВебХука.
+        /// Инициализирует новый объект класса BitrixClient с указанием URL-адреса входящего вебхука
         /// </summary>
-        /// <param name="webhookUrl">Url адрес входящего ВебХука.</param>
-        public BitrixClient(string webhookUrl)
+        /// <param name="webHookUrl">URL-адрес входящего вебхука</param>
+        public BitrixClient(string webHookUrl)
         {
-            if (string.IsNullOrEmpty(webhookUrl)) throw new ArgumentNullException();
-            startUrl = webhookUrl;
-            client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+            this.webHookUrl = webHookUrl ?? throw new ArgumentNullException(nameof(webHookUrl));
+            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         }
+        #endregion Public
+
         #endregion Constructors
 
         #region Methods
 
+        #region Protected
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            if (disposing)
+            {
+
+            }
+
+            client.CancelPendingRequests();
+            client.Dispose();
+
+            disposed = true;
+        }
+        #endregion Protected
+
         #region Public
+
+        #region Methods for getting users
         /// <summary>
-        /// Получает список всех пользователей в Bitrix.
+        /// Получает список пользователей Bitrix24
         /// </summary>
-        /// <returns>При успешном запросе возвращает список всех пользователей, в противном случае возвращает "Null"., </returns>
-        public List<UserShort>? GetUsers()
+        /// <returns>Если успешно список пользователей, в противном случае NULL</returns>
+        public List<User>? GetUsers()
         {
             try
             {
-                BitrixResponseUserGet response = client.GetFromJsonAsync<BitrixResponseUserGet>($"{startUrl}user.get.json").Result;
-                return response.Result;
+                Task<string> response = client.GetStringAsync($"{webHookUrl}user.get.json");
+
+                return JsonConvert.DeserializeObject<GetUsersResponse>(response.Result)?.Result;
             }
             catch
             {
                 return null;
             }
         }
+
         /// <summary>
-        /// Отправка сообщения в чат или в диалог.
+        /// Получает список пользователей Bitrix24
         /// </summary>
-        /// <param name="dialogId">ID Чата или ID диалога, узнать ID можно написав в чате "/getChatId".</param>
-        /// <param name="text">Текст сообщения.</param>
-        /// <param name="zeroOrMsgID">Ответ на запрос от сервера как ID успешно созданного сообщения или в случае ошибки возвращает "0".</param>
-        /// <param name="IsSystemMessage">Значение</param>
-        /// <returns>В случае успешной отправки возвращает True</returns>
-        public bool SendMessageToDialog(string dialogId, string text, out int zeroOrMsgID, bool IsSystemMessage = true)
+        /// <returns>Объект задачи, представляющий асинхронную операцию</returns>
+        public async Task<List<User>?> GetUsersAsync()
         {
-            string GetSystemAttribute()
+            List<User>? users = null;
+
+            await Task.Run(() =>
             {
-                if (IsSystemMessage)
-                {
-                    return "Y";
-                }
-                else { return "N"; }
-            }
-            try
-            {
-                var values = new Dictionary<string, string>
-                {
-                    { "DIALOG_ID", $"{dialogId}" },
-                    { "MESSAGE", $"{text}" },
-                    { "SYSTEM", GetSystemAttribute() },
-                    { "ATTACH", "" },
-                    { "URL_PREVIEW", "Y" },
-                    { "KEYBOARD", "" },
-                    { "MENU", "" },
-                };
-                var content = new FormUrlEncodedContent(values);
-                var response = client.PostAsync($"{startUrl}im.message.add.json", content);
-                zeroOrMsgID = response.Result.Content.ReadFromJsonAsync<MsgResult>().Result.result;
-                return response.IsCompletedSuccessfully;
-            }
-            catch
-            {
-                zeroOrMsgID = 0;
-                return false;
-            }
+                Task<string> taskResponse = client.GetStringAsync($"{webHookUrl}user.get.json");
+                taskResponse.Wait();
+
+                GetUsersResponse? resultResponse = JsonConvert.DeserializeObject<GetUsersResponse>(taskResponse.Result);
+                users = resultResponse?.Result;
+            });
+
+            return users;
         }
+        #endregion Methods for getting users
+
+        #region Methods for getting messages
         /// <summary>
-        /// Получает список последних сообщений из чата.
+        /// Получает список последних сообщений из чата или диалога
         /// </summary>
-        /// <param name="chatId">Id чата, возможно узнать отправив "/getChatId" в чат.</param>
-        /// <param name="limit">Максимальное кол-во сообщений к возврату.</param>
-        /// <returns>Возвращает список сообщений в случае успеха, в противном случае возвращает "Null".</returns>
-        public List<Message> GetMessagesFromChat(string chatId, int limit)
+        /// <param name="dialogId">ID чата или диалога</param>
+        /// <param name="limit">Количество сообщений к возврату</param>
+        /// <returns>Если успешно список последних сообщений, в противном случае NULL</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public List<Message>? GetMessages(string dialogId, int limit)
         {
+            if (dialogId == null)
+            {
+                throw new ArgumentNullException(nameof(dialogId));
+            }
+
+            FormUrlEncodedContent requestContent = new(new Dictionary<string, string>
+            {
+                { "DIALOG_ID", $"{dialogId}" },
+                { "LIMIT", $"{limit}" }
+            });
+
             try
             {
-                var values = new Dictionary<string, string>
-                {
-                    { "DIALOG_ID", $"{chatId}" },
-                    { "LIMIT", $"{limit}" },
-                };
-                var content = new FormUrlEncodedContent(values);
+                Task<HttpResponseMessage> response = client.PostAsync($"{webHookUrl}im.dialog.messages.get.json", requestContent);
+                List<BaseMessage>? baseMessages = JsonConvert.DeserializeObject<GetMessagesResponse>(response.Result.Content.ReadAsStringAsync().Result)?.Result.Messages;
+                List<Message>? messages = baseMessages == null ? null : (from baseMessage in baseMessages select new Message(baseMessage, dialogId)).ToList();
+                messages?.Reverse();
 
-                var response = client.PostAsync($"{startUrl}im.dialog.messages.get.json", content);
-
-                if (response.IsCompletedSuccessfully)
-                {
-                    var result = response.Result.Content.ReadFromJsonAsync<BitrixResponseImDialogMessagesGet>().Result;
-                    return result.Result.Messages;
-                }
-                return null;
+                return messages;
             }
             catch
             {
-
                 return null;
             }
         }
+
         /// <summary>
-        /// Отредактировать сообщение (Системное сообщение нельзя редактировать, нельзя редактировать сообщение сроком давности от 3 суток).
+        /// Получает список последних сообщений из чата или диалога
         /// </summary>
-        /// <param name="messageId">ID существующего сообщения для редактирования.</param>
-        /// <param name="text">Новый текст сообщения.</param>
-        /// <returns>В случае успеха возвращает "True".</returns>
-        public bool UpdateMessage(int messageId, string text)
+        /// <param name="dialogId">ID чата или диалога</param>
+        /// <returns>Объект задачи, представляющий асинхронную операцию</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public async Task<List<Message>?> GetMessagesAsync(string dialogId)
         {
+            if (dialogId == null)
+            {
+                throw new ArgumentNullException(nameof(dialogId));
+            }
+
+            List<Message>? messages = null;
+            FormUrlEncodedContent requestContent = new(new Dictionary<string, string> { { "DIALOG_ID", $"{dialogId}" } });
+
+            await Task.Run(() =>
+            {
+                Task<HttpResponseMessage> mainTaskResponse = client.PostAsync($"{webHookUrl}im.dialog.messages.get.json", requestContent);
+                mainTaskResponse.Wait();
+
+                Task<string> subTaskResponse = mainTaskResponse.Result.Content.ReadAsStringAsync();
+                subTaskResponse.Wait();
+
+                GetMessagesResponse? resultResponse = JsonConvert.DeserializeObject<GetMessagesResponse>(subTaskResponse.Result);
+                messages = (from baseMessage in resultResponse?.Result.Messages select new Message(baseMessage, dialogId)).ToList();
+                messages.Reverse();
+            });
+
+            return messages;
+        }
+        #endregion Methods for getting messages
+
+        #region Methods for sending message
+        /// <summary>
+        /// Отправляет сообщение в чат или диалог
+        /// </summary>
+        /// <param name="dialogId">ID чата или диалога</param>
+        /// <param name="messageText">Текст сообщения</param>
+        /// <param name="messageId">ID отрправленного сообщения. Если не успешно, то значение 0</param>
+        /// <param name="sysMessage">Параметр для указания сообщения, как системного при отправке</param>
+        /// <returns>Если успешно true, в противном случае false</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public bool SendMessage(string dialogId, string messageText, out int messageId, bool sysMessage = true)
+        {
+            if (dialogId == null)
+            {
+                throw new ArgumentNullException(nameof(dialogId));
+            }
+
+            if (messageText == null)
+            {
+                throw new ArgumentNullException(nameof(messageText));
+            }
+
+            string sysAttribute = sysMessage ? "Y" : "N";
+            FormUrlEncodedContent requestContent = new(new Dictionary<string, string>
+            {
+                { "DIALOG_ID", $"{dialogId}" },
+                { "MESSAGE", $"{messageText}" },
+                { "SYSTEM", sysAttribute },
+                { "ATTACH", "" },
+                { "URL_PREVIEW", "Y" },
+                { "KEYBOARD", "" },
+                { "MENU", "" }
+            });
+
             try
             {
-                var values = new Dictionary<string, string>
-                {
-                    { "MESSAGE_ID", $"{messageId}" },
-                    { "MESSAGE", $"{text}" },
-                    { "ATTACH", "" },
-                    { "URL_PREVIEW", "Y" },
-                    { "KEYBOARD", "" },
-                    { "MENU", "" },
-                };
-                var content = new FormUrlEncodedContent(values);
-                var response = client.PostAsync($"{startUrl}im.message.update.json", content);
+                Task<HttpResponseMessage> response = client.PostAsync($"{webHookUrl}im.message.add.json", requestContent);
+                messageId = Convert.ToInt32(JsonConvert.DeserializeObject<SendMessageResponse>(response.Result.Content.ReadAsStringAsync().Result)?.Result);
+
+                return response.IsCompletedSuccessfully;
+            }
+            catch
+            {
+                messageId = 0;
+
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Отправляет сообщение в чат или диалог
+        /// </summary>
+        /// <param name="dialogId">ID чата или диалога</param>
+        /// <param name="messageText">Текст сообщения</param>
+        /// <param name="sysMessage">Параметр для указания сообщения, как системного при отправке</param>
+        /// <returns>Объект задачи, представляющий асинхронную операцию</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public async Task<int> SendMessageAsync(string dialogId, string messageText, bool sysMessage = false)
+        {
+            if (dialogId == null)
+            {
+                throw new ArgumentNullException(nameof(dialogId));
+            }
+
+            if (messageText == null)
+            {
+                throw new ArgumentNullException(nameof(messageText));
+            }
+
+            int messageId = 0;
+            string sysAttribute = sysMessage ? "Y" : "N";
+            FormUrlEncodedContent messageContent = new(new Dictionary<string, string>
+            {
+                { "DIALOG_ID", $"{dialogId}" },
+                { "MESSAGE", $"{messageText}" },
+                { "SYSTEM",  sysAttribute},
+                { "ATTACH", "" },
+                { "URL_PREVIEW", "Y" },
+                { "KEYBOARD", "" },
+                { "MENU", "" }
+            });
+
+            await Task.Run(() =>
+            {
+                Task<HttpResponseMessage>? mainTaskResponse = client.PostAsync($"{webHookUrl}im.message.add.json", messageContent);
+                mainTaskResponse.Wait();
+
+                Task<string> subTaskResponse = mainTaskResponse.Result.Content.ReadAsStringAsync();
+                subTaskResponse.Wait();
+
+                SendMessageResponse? resultResponse = JsonConvert.DeserializeObject<SendMessageResponse>(subTaskResponse.Result);
+                messageId = Convert.ToInt32(resultResponse?.Result);
+            });
+
+            return messageId;
+        }
+        #endregion Methods for sending message
+
+        #region Methods for updating message
+        /// <summary>
+        /// Редактирует сообщение (системное сообщение нельзя редактировать, как и сообщение сроком давности от 3 суток)
+        /// </summary>
+        /// <param name="messageId">ID сообщения для редактирования</param>
+        /// <param name="messageText">Новый текст сообщения</param>
+        /// <returns>Если успешно true, в противном случае false</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public bool UpdateMessage(int messageId, string messageText)
+        {
+            if (messageText == null)
+            {
+                throw new ArgumentNullException(nameof(messageText));
+            }
+
+            FormUrlEncodedContent requestContent = new(new Dictionary<string, string>
+            {
+                { "MESSAGE_ID", $"{messageId}" },
+                { "MESSAGE", $"{messageText}" },
+                { "ATTACH", "" },
+                { "URL_PREVIEW", "Y" },
+                { "KEYBOARD", "" },
+                { "MENU", "" },
+            });
+
+            try
+            {
+                Task<HttpResponseMessage> response = client.PostAsync($"{webHookUrl}im.message.update.json", requestContent);
+
                 return response.IsCompletedSuccessfully;
             }
             catch
@@ -153,21 +302,57 @@ namespace BitrixRestApiClientLib.Buisness
                 return false;
             }
         }
+
         /// <summary>
-        /// Удаляет существующее сообщение.
+        /// Редактирует сообщение (системное сообщение нельзя редактировать, как и сообщение сроком давности от 3 суток)
         /// </summary>
-        /// <param name="messageId">ID существующего сообщения к удалению.</param>
-        /// <returns>В случае успеха возращает "True".</returns>
-        public bool DeleteMessage(int messageId) 
+        /// <param name="messageId">ID сообщения для редактирования</param>
+        /// <param name="messageText">Новый текст сообщения</param>
+        /// <returns>Объект задачи, представляющий асинхронную операцию</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public async Task<bool> UpdateMessageAsync(int messageId, string messageText)
         {
+            if (messageText == null)
+            {
+                throw new ArgumentNullException(nameof(messageText));
+            }
+
+            bool isSuccessfully = false;
+            FormUrlEncodedContent requestContent = new(new Dictionary<string, string>
+            {
+                { "MESSAGE_ID", $"{messageId}" },
+                { "MESSAGE", $"{messageText}" },
+                { "ATTACH", "" },
+                { "URL_PREVIEW", "Y" },
+                { "KEYBOARD", "" },
+                { "MENU", "" }
+            });
+
+            await Task.Run(() =>
+            {
+                Task<HttpResponseMessage> taskResponse = client.PostAsync($"{webHookUrl}im.message.update.json", requestContent);
+                taskResponse.Wait();
+                isSuccessfully = taskResponse.IsCompletedSuccessfully;
+            });
+
+            return isSuccessfully;
+        }
+        #endregion Methods for updating message
+
+        #region Method for deleting message
+        /// <summary>
+        /// Удаляет существующее сообщение
+        /// </summary>
+        /// <param name="messageId">ID существующего сообщения</param>
+        /// <returns>Если успешно true, в противном случае false</returns>
+        public bool DeleteMessage(int messageId)
+        {
+            FormUrlEncodedContent requestContent = new(new Dictionary<string, string> { { "MESSAGE_ID", $"{messageId}" } });
+
             try
             {
-                var values = new Dictionary<string, string>
-                {
-                    { "MESSAGE_ID", $"{messageId}" },
-                };
-                var content = new FormUrlEncodedContent(values);
-                var response = client.PostAsync($"{startUrl}im.message.delete.json", content);
+                Task<HttpResponseMessage> response = client.PostAsync($"{webHookUrl}im.message.delete.json", requestContent);
+
                 return response.IsCompletedSuccessfully;
             }
             catch
@@ -175,6 +360,39 @@ namespace BitrixRestApiClientLib.Buisness
                 return false;
             }
         }
+
+        /// <summary>
+        /// Удаляет существующее сообщение
+        /// </summary>
+        /// <param name="messageId">ID существующего сообщения</param>
+        /// <returns>Объект задачи, представляющий асинхронную операцию</returns>
+        public async Task<bool> DeleteMessageAsync(int messageId)
+        {
+            bool isSuccessfully = false;
+            FormUrlEncodedContent requestContent = new(new Dictionary<string, string> { { "MESSAGE_ID", $"{messageId}" } });
+
+            await Task.Run(() =>
+            {
+                Task<HttpResponseMessage> taskResponse = client.PostAsync($"{webHookUrl}im.message.delete.json", requestContent);
+                taskResponse.Wait();
+                isSuccessfully = taskResponse.IsCompletedSuccessfully;
+            });
+
+            return isSuccessfully;
+        }
+        #endregion Method for deleting message
+
+        #region Method for disposing resources
+        /// <summary>
+        /// Освобождает неуправляемые и управляемые ресурсы
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+        #endregion Method for disposing resources
+
         #endregion Public
 
         #endregion Methods
