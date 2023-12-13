@@ -2,28 +2,28 @@
 
 namespace BitrixRestApiClientLib.Models
 {
-    public class GetMessagesResponse
+    public class GetInfoLocationChatFilesResponse
     {
         #region Classes
 
         #region Public
-        public class ResultMessages
+        public class ResultInfoLocationChatFiles
         {
             #region Properties
 
             #region Public
-            [JsonProperty(PropertyName = "messages")]
-            public List<BaseMessage> Messages { get; set; }
+            [JsonProperty(PropertyName = "ID")]
+            public int Id { get; set; }
             #endregion Public
 
             #endregion Properties
 
-            #region Constructors
+            #region Constructors 
 
             #region Public
-            public ResultMessages()
+            public ResultInfoLocationChatFiles()
             {
-                Messages = new List<BaseMessage>();
+
             }
             #endregion Public
 
@@ -31,13 +31,13 @@ namespace BitrixRestApiClientLib.Models
         }
         #endregion Public
 
-        #endregion Classes 
+        #endregion Classes
 
         #region Properties
 
         #region Public
         [JsonProperty(PropertyName = "result")]
-        public ResultMessages Result { get; set; }
+        public ResultInfoLocationChatFiles Result { get; set; }
         #endregion Public
 
         #endregion Properties
@@ -45,9 +45,9 @@ namespace BitrixRestApiClientLib.Models
         #region Constructors
 
         #region Public
-        public GetMessagesResponse()
+        public GetInfoLocationChatFilesResponse()
         {
-            Result = new ResultMessages();
+            Result = new ResultInfoLocationChatFiles();
         }
         #endregion Public
 

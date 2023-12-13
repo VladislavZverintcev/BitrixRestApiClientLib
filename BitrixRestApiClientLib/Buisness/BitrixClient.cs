@@ -1,6 +1,8 @@
 ﻿using System.Net.Http.Headers;
+using System.Text;
 using BitrixRestApiClientLib.Models;
 using Newtonsoft.Json;
+using IO = System.IO;
 
 namespace BitrixRestApiClientLib.Buisness
 {
@@ -36,6 +38,24 @@ namespace BitrixRestApiClientLib.Buisness
         #endregion Constructors
 
         #region Methods
+
+        #region Private
+
+        #region Method to convet string to integer
+        /// <summary>
+        /// Преобразовывает строковое представление в эквивалентное 32-разрядное целое число, исключая символы, не имеющих соотвествующий эквивалент
+        /// </summary>
+        /// <param name="str">Строковое представление, содержащее число для преобразования</param>
+        /// <returns>32-разрядное целое число эквивалентное числу в параметре str, или 0 (ноль), если параметр str был NULL</returns>
+        private static int ConvertStringToInt32(string str)
+        {
+            List<char> allowedSymbols = new() { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' };
+
+            return Convert.ToInt32(new string((from symbol in str.ToCharArray().ToList() where allowedSymbols.Contains(symbol) select symbol).ToArray()));
+        }
+        #endregion Method to convet string to integer
+
+        #endregion Private
 
         #region Protected
         protected virtual void Dispose(bool disposing)
@@ -222,10 +242,11 @@ namespace BitrixRestApiClientLib.Buisness
         /// </summary>
         /// <param name="dialogId">ID чата или диалога</param>
         /// <param name="messageText">Текст сообщения</param>
+        /// <param name="files">Список файлов для прикрепления к сообщению</param>
         /// <param name="sysMessage">Параметр для указания сообщения, как системного при отправке</param>
         /// <returns>Объект задачи, представляющий асинхронную операцию</returns>
         /// <exception cref="ArgumentNullException"></exception>
-        public async Task<int> SendMessageAsync(string dialogId, string messageText, bool sysMessage = false)
+        public async Task<int> SendMessageAsync(string dialogId, string messageText, List<string>? files = null, bool sysMessage = false)
         {
             if (dialogId == null)
             {
@@ -238,27 +259,63 @@ namespace BitrixRestApiClientLib.Buisness
             }
 
             int messageId = 0;
-            string sysAttribute = sysMessage ? "Y" : "N";
-            FormUrlEncodedContent messageContent = new(new Dictionary<string, string>
-            {
-                { "DIALOG_ID", $"{dialogId}" },
-                { "MESSAGE", $"{messageText}" },
-                { "SYSTEM",  sysAttribute},
-                { "ATTACH", "" },
-                { "URL_PREVIEW", "Y" },
-                { "KEYBOARD", "" },
-                { "MENU", "" }
-            });
+            List<BaseFile>? loadedFiles = null;
 
             await Task.Run(() =>
             {
-                Task<HttpResponseMessage>? mainTaskResponse = client.PostAsync($"{webHookUrl}im.message.add.json", messageContent);
-                mainTaskResponse.Wait();
+                if (files != null && files.Count > 0)
+                {
+                    Task<int> getInfoLocationChatFilesResponse = GetInfoLocationChatFilesAsync(dialogId);
+                    getInfoLocationChatFilesResponse.Wait();
 
-                Task<string> subTaskResponse = mainTaskResponse.Result.Content.ReadAsStringAsync();
-                subTaskResponse.Wait();
+                    loadedFiles = new List<BaseFile>();
+                    files?.ForEach((file) =>
+                    {
+                        Task<Models.File?> uploadFileInFolderResponse = UploadFileInFolderAsync(Convert.ToInt32(getInfoLocationChatFilesResponse?.Result), file);
+                        uploadFileInFolderResponse.Wait();
+                        if (uploadFileInFolderResponse.Result != null)
+                        {
+                            loadedFiles.Add(new BaseFile(uploadFileInFolderResponse.Result, Convert.ToInt32(new FileInfo(file).Length)));
+                        }
+                    });
+                }
 
-                SendMessageResponse? resultResponse = JsonConvert.DeserializeObject<SendMessageResponse>(subTaskResponse.Result);
+                MessageContent messageContent = new()
+                {
+                    DialogId = dialogId,
+                    Message = messageText,
+                    System = sysMessage ? "Y" : "N",
+                    UrlPreview = "Y"
+                };
+                if (loadedFiles != null && loadedFiles.Count > 0)
+                {
+                    messageContent.Attachment = new Attachment
+                    {
+                        Id = 1,
+                        Blocks = new List<object>()
+                    };
+                    loadedFiles.ForEach((file) =>
+                    {
+                        messageContent.Attachment.Blocks.Add(new AttachFile
+                        {
+                            File = new BaseFile
+                            {
+                                Name = file.Name,
+                                DownloadUrl = file.DownloadUrl,
+                                Size = file.Size
+                            }
+                        });
+                    });
+                }
+                HttpContent requestContent = new StringContent(JsonConvert.SerializeObject(messageContent), Encoding.UTF8, "application/json");
+
+                Task<HttpResponseMessage>? sendMessageResponse = client.PostAsync($"{webHookUrl}im.message.add.json", requestContent);
+                sendMessageResponse.Wait();
+
+                Task<string> readAsStringResponse = sendMessageResponse.Result.Content.ReadAsStringAsync();
+                readAsStringResponse.Wait();
+
+                SendMessageResponse? resultResponse = JsonConvert.DeserializeObject<SendMessageResponse>(readAsStringResponse.Result);
                 messageId = Convert.ToInt32(resultResponse?.Result);
             });
 
@@ -381,6 +438,122 @@ namespace BitrixRestApiClientLib.Buisness
             return isSuccessfully;
         }
         #endregion Method for deleting message
+
+        #region Method to send file
+        /// <summary>
+        /// Отправляет файл в чат
+        /// </summary>
+        /// <param name="dialogId">ID чата</param>
+        /// <param name="pathToFile">Локальный путь к отправляемому файлу</param>
+        /// <returns>Объект задачи, представляющий асинхронную операцию</returns>
+        public async Task<bool> SendFileAsync(string dialogId, string pathToFile)
+        {
+            bool isSuccessfully = false;
+
+            await Task.Run(() =>
+            {
+                Task<int> getInfoLocationChatFilesResponse = GetInfoLocationChatFilesAsync(dialogId);
+                getInfoLocationChatFilesResponse.Wait();
+
+                Task<Models.File?> uploadFileInFolderResponse = UploadFileInFolderAsync(Convert.ToInt32(getInfoLocationChatFilesResponse?.Result), pathToFile);
+                uploadFileInFolderResponse.Wait();
+
+                FormUrlEncodedContent requestContent = new(new Dictionary<string, string>
+                {
+                    { "CHAT_ID", $"{ConvertStringToInt32(dialogId)}" },
+                    { "UPLOAD_ID", $"{Convert.ToInt32(uploadFileInFolderResponse?.Result?.Id)}" }
+                });
+
+                Task<HttpResponseMessage> sendFileResponse = client.PostAsync($"{webHookUrl}im.disk.file.commit.json", requestContent);
+                sendFileResponse.Wait();
+                isSuccessfully = sendFileResponse.IsCompletedSuccessfully;
+            });
+
+            return isSuccessfully;
+        }
+        #endregion Method to send file 
+
+        #region Method to get info location chat files
+        /// <summary>
+        /// Получает ID папки, в которой располагаются файлы чата
+        /// </summary>
+        /// <param name="dialogId">ID чата</param>
+        /// <returns>Объект задачи, представляющий асинхронную операцию</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public async Task<int> GetInfoLocationChatFilesAsync(string dialogId)
+        {
+            if (dialogId == null)
+            {
+                throw new ArgumentNullException(nameof(dialogId));
+            }
+
+            int locationChatFilesId = 0;
+            FormUrlEncodedContent requestContent = new(new Dictionary<string, string> { { "CHAT_ID", $"{ConvertStringToInt32(dialogId)}" } });
+
+            await Task.Run(() =>
+            {
+                Task<HttpResponseMessage> mainTaskResponse = client.PostAsync($"{webHookUrl}im.disk.folder.get.json", requestContent);
+                mainTaskResponse.Wait();
+
+                Task<string> subTaskResponse = mainTaskResponse.Result.Content.ReadAsStringAsync();
+                subTaskResponse.Wait();
+
+                GetInfoLocationChatFilesResponse? resultResponse = JsonConvert.DeserializeObject<GetInfoLocationChatFilesResponse>(subTaskResponse.Result);
+                locationChatFilesId = Convert.ToInt32(resultResponse?.Result.Id);
+            });
+
+            return locationChatFilesId;
+        }
+        #endregion Method to get info location chat files
+
+        #region Method to upload file in folder
+        /// <summary>
+        /// Загружает файл в папку
+        /// </summary>
+        /// <param name="folderId">ID папки</param>
+        /// <param name="pathToFile">Локальный путь к отправляемому файлу</param>
+        /// <returns>Объект задачи, представляющий асинхронную операцию</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        /// <exception cref="FileNotFoundException"></exception>
+        public async Task<Models.File?> UploadFileInFolderAsync(int folderId, string pathToFile)
+        {
+            if (pathToFile == null)
+            {
+                throw new ArgumentNullException(nameof(pathToFile));
+            }
+
+            if (!IO.File.Exists(pathToFile))
+            {
+                throw new FileNotFoundException();
+            }
+
+            Models.File? file = null;
+            HttpContent requestContent = new StringContent(JsonConvert.SerializeObject(new UploadFileInFolderRequest
+            {
+                Id = folderId,
+                Data = new FileContent() { Name = Path.GetFileName(pathToFile) },
+                FileContent = Convert.ToBase64String(IO.File.ReadAllBytes(pathToFile)),
+                GenerateUniqueName = true,
+                Rights = null
+            }),
+            Encoding.UTF8,
+            "application/json");
+
+            await Task.Run(() =>
+            {
+                Task<HttpResponseMessage> mainTaskResponse = client.PostAsync($"{webHookUrl}disk.folder.uploadfile.json", requestContent);
+                mainTaskResponse.Wait();
+
+                Task<string> subTaskResponse = mainTaskResponse.Result.Content.ReadAsStringAsync();
+                subTaskResponse.Wait();
+
+                UploadFileInFolderResponse? resultResponse = JsonConvert.DeserializeObject<UploadFileInFolderResponse>(subTaskResponse.Result);
+                file = resultResponse?.Result;
+            });
+
+            return file;
+        }
+        #endregion Method to upload file in folder
 
         #region Method for disposing resources
         /// <summary>

@@ -36,6 +36,6 @@ namespace BitrixRestApiClientLib.Models
         }
         #endregion Public
 
-        #endregion Construcotrs
+        #endregion Constructors
     }
 }

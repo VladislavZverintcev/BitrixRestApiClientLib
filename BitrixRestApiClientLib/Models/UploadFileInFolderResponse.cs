@@ -2,23 +2,23 @@
 
 namespace BitrixRestApiClientLib.Models
 {
-    public class SendMessageResponse
+    public class UploadFileInFolderResponse
     {
         #region Properties
 
         #region Public
         [JsonProperty(PropertyName = "result")]
-        public int Result { get; set; }
+        public File Result { get; set; }
         #endregion Public
 
         #endregion Properties
 
-        #region Constructors 
+        #region Constructors
 
         #region Public
-        public SendMessageResponse()
+        public UploadFileInFolderResponse()
         {
-
+            Result = new File();
         }
         #endregion Public
 

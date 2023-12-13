@@ -2,23 +2,23 @@
 
 namespace BitrixRestApiClientLib.Models
 {
-    public class SendMessageResponse
+    public class FileContent
     {
         #region Properties
 
         #region Public
-        [JsonProperty(PropertyName = "result")]
-        public int Result { get; set; }
+        [JsonProperty(PropertyName = "NAME")]
+        public string Name { get; set; }
         #endregion Public
 
         #endregion Properties
 
-        #region Constructors 
+        #region Constructors
 
         #region Public
-        public SendMessageResponse()
+        public FileContent()
         {
-
+            Name = string.Empty;
         }
         #endregion Public
 
